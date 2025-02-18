@@ -17,7 +17,7 @@ import torch.nn.functional as F
 
 GAMMA = 0.99
 REWARD_STEPS = 16
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 LEARNING_RATE = 0.001
 ENTROPY_BETA = 1e-3
 NUM_ENVS = 100
@@ -46,7 +46,7 @@ def test_net(net: model.ModelA2C, env: gym.Env, count: int = 10,
 
 
 def calc_logprob(mu_v: torch.Tensor, var_v: torch.Tensor, actions_v: torch.Tensor):
-    p1 = - ((mu_v - actions_v) ** 2) / (2*var_v.clamp(min=1e-3))
+    p1 = - ((mu_v - actions_v) ** 2) / (2 * var_v.clamp(min=1e-6))
     p2 = - torch.log(torch.sqrt(2 * math.pi * var_v))
     return p1 + p2
 
