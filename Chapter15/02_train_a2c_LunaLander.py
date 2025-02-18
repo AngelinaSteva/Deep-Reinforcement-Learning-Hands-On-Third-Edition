@@ -6,6 +6,7 @@ import ptan
 import gymnasium as gym
 import argparse
 from torch.utils.tensorboard.writer import SummaryWriter
+from torch.optim.lr_scheduler import ExponentialLR
 
 from lib import model, common
 
@@ -14,13 +15,12 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 
-
 GAMMA = 0.995
-REWARD_STEPS = 5
+REWARD_STEPS = 10  # Erhöht für stabileres Lernen
 BATCH_SIZE = 256
-LEARNING_RATE = 0.00083  # Linear schedule to be handled elsewhere if needed
-ENTROPY_BETA = 1e-5
-NUM_ENVS = 8
+LEARNING_RATE = 0.00083  # Exponentielle Anpassung
+ENTROPY_BETA = 0.001  # Erhöhte Entropiestrafe für bessere Exploration
+NUM_ENVS = 16  # Erhöht für mehr Parallelisierung
 N_TIMESTEPS = 200000.0
 
 TEST_ITERS = 1000
@@ -79,6 +79,7 @@ if __name__ == "__main__":
     exp_source = ptan.experience.VectorExperienceSourceFirstLast(env, agent, gamma=GAMMA, steps_count=REWARD_STEPS)
 
     optimizer = optim.Adam(net.parameters(), lr=LEARNING_RATE)
+    scheduler = ExponentialLR(optimizer, gamma=0.99)  # Exponentieller Lernratenplan
 
     batch = []
     best_reward = None
@@ -117,7 +118,7 @@ if __name__ == "__main__":
                 optimizer.zero_grad()
                 mu_v, var_v, value_v = net(states_v)
 
-                loss_value_v = F.mse_loss(value_v.squeeze(-1), vals_ref_v)
+                loss_value_v = 0.5 * F.mse_loss(value_v.squeeze(-1), vals_ref_v)  # Höhere Gewichtung für Value-Loss
                 adv_v = vals_ref_v.unsqueeze(dim=-1) - value_v.detach()
                 log_prob_v = adv_v * calc_logprob(mu_v, var_v, actions_v)
                 loss_policy_v = -log_prob_v.mean()
@@ -127,6 +128,7 @@ if __name__ == "__main__":
                 loss_v = loss_policy_v + entropy_loss_v + loss_value_v
                 loss_v.backward()
                 optimizer.step()
+                scheduler.step()  # Lernrate reduzieren
 
                 tb_tracker.track("advantage", adv_v, step_idx)
                 tb_tracker.track("values", value_v, step_idx)
@@ -135,3 +137,6 @@ if __name__ == "__main__":
                 tb_tracker.track("loss_policy", loss_policy_v, step_idx)
                 tb_tracker.track("loss_value", loss_value_v, step_idx)
                 tb_tracker.track("loss_total", loss_v, step_idx)
+
+                if step_idx % 10000 == 0:
+                    torch.save(net.state_dict(), f"checkpoint_{step_idx}.pth")
